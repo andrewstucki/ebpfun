@@ -1,5 +1,5 @@
 .vscode
 .vagrant
 bpf_bp*
-xdp-skeleton
+ebpfun
 .DS_Store
