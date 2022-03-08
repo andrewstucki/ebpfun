@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/andrewstucki/ebpfun/firewall"
 
@@ -19,28 +19,6 @@ func init() {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-type Configuration struct {
-	Interfaces []string `hcl:"interfaces"`
-}
-
-func (c *Configuration) FilteredInterfaces() ([]net.Interface, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-
-	filtered := []net.Interface{}
-	for _, iface := range interfaces {
-		for _, configured := range c.Interfaces {
-			if iface.Name == configured {
-				filtered = append(filtered, iface)
-				break
-			}
-		}
-	}
-	return filtered, nil
 }
 
 func main() {
@@ -61,17 +39,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("error reading configuration file: %v", err)
 	}
-
-	interfaces, err := config.FilteredInterfaces()
+	ingresses, exemptions, err := config.ToFirewall()
 	if err != nil {
-		log.Fatalf("unable to configure XDP interfaces: %v", err)
+		log.Fatalf("error parsing configuration: %v", err)
 	}
+
+	// firewall.Update can be called any time to update the ingresses/exemptions live
+	if err := firewall.Update(ingresses, exemptions); err != nil {
+		log.Fatalf("error updating firewall configuration: %v", err)
+	}
+	defer firewall.Cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	errors := make(chan error, 1)
 	go func() {
-		errors <- firewall.Start(ctx, interfaces)
+		errors <- firewall.Poll(ctx, 1*time.Second)
 	}()
 
 	<-stop

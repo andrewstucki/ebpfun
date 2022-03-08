@@ -5,10 +5,10 @@
 #include "bpf_endian.h"
 
 #define ETH_P_IP 0x0800
-#define ETH_P_IPV6 0x86DD
 
-#define IP_PACKET 0
-#define IPV6_PACKET 1
+#define DROPPED_PACKET 0
+
+#define MAX_MAP_SIZE 1024
 
 #define ensure_size(packet, value)                                             \
   ({                                                                           \
@@ -16,16 +16,41 @@
       return -1;                                                               \
   })
 
+struct packet_parser {
+  void *current;
+  void *end;
+};
+
+struct __attribute__((__packed__)) ingress {
+  __be32 address;
+  __be16 port;
+};
+
+struct __attribute__((__packed__)) exemption {
+  __be32 source;
+  __be32 destination;
+  __be16 port;
+};
+
 struct bpf_map_def SEC("maps") packet_counter = {
   .type = BPF_MAP_TYPE_ARRAY,
   .key_size = sizeof(u32),
   .value_size = sizeof(u64),
-  .max_entries = 2,
+  .max_entries = 1,
 };
 
-struct packet_parser {
-  void *current;
-  void *end;
+struct bpf_map_def SEC("maps") exemptions = {
+  .type = BPF_MAP_TYPE_HASH,
+  .key_size = sizeof(struct exemption),
+  .value_size = sizeof(u8),
+  .max_entries = MAX_MAP_SIZE,
+};
+
+struct bpf_map_def SEC("maps") ingresses = {
+  .type = BPF_MAP_TYPE_HASH,
+  .key_size = sizeof(struct ingress),
+  .value_size = sizeof(u8),
+  .max_entries = MAX_MAP_SIZE,
 };
 
 static __always_inline void count(u32 version) {
@@ -37,6 +62,43 @@ static __always_inline void count(u32 version) {
   } else {
     bpf_map_update_elem(&packet_counter, &version_key, &default_value, BPF_ANY);
   }
+}
+
+static __always_inline bool ingress_is_tracked(__be32 address, __be16 port) {
+  struct ingress key = {
+    .address = address,
+    .port = port,
+  };
+  if (bpf_map_lookup_elem(&ingresses, &key)) {
+    return true;
+  }
+  return false;
+}
+
+static __always_inline bool has_exemption(__be32 source, __be32 destination, __be16 port) {
+  struct exemption key = {
+    .source = source,
+    .destination = destination,
+    .port = port,
+  };
+
+  if (bpf_map_lookup_elem(&exemptions, &key)) {
+    return true;
+  }
+  return false;
+}
+
+static __always_inline int maybe_drop(__be32 source, __be32 destination, __be16 port) {  
+  // are we actively tracking this destination?
+  if (ingress_is_tracked(destination, port)) {
+    // if we are, check if we have an exemption
+    if (!has_exemption(source, destination, port)) {
+      // if we don't have an exemption, drop the packet
+      count(DROPPED_PACKET);
+      return XDP_DROP;
+    }
+  }
+  return XDP_PASS;
 }
 
 static __always_inline int parse_ethernet(struct packet_parser *packet, struct ethhdr **eth) {
@@ -62,34 +124,47 @@ static __always_inline int parse_ip(struct packet_parser *packet, struct iphdr *
   return 0;
 }
 
-static __always_inline int parse_ip6(struct packet_parser *packet, struct ipv6hdr **ip) {
-  ensure_size(packet, sizeof(struct ipv6hdr));
+static __always_inline int parse_tcp(struct packet_parser *packet, struct tcphdr **tcp) {
+  ensure_size(packet, sizeof(struct tcphdr));
 
-  *ip = packet->current;
-  packet->current += sizeof(struct ipv6hdr);
+  struct tcphdr *header = (struct tcphdr *)packet->current;
+  u32 offset = header->doff << 2;
+  if (offset < sizeof(struct tcphdr)) {
+    return -1;
+  }
+
+  ensure_size(packet, offset);
+  packet->current += offset;
+  *tcp = header;
+  return 0;
+}
+
+static __always_inline int parse_udp(struct packet_parser *packet, struct udphdr **udp) {
+  ensure_size(packet, sizeof(struct udphdr));
+
+  *udp = (struct udphdr *)packet->current;
+  packet->current += sizeof(struct udphdr);
   return 0;
 }
 
 static __always_inline int classify_ip(struct packet_parser *packet) {
   struct iphdr *ip;
-
-  if (!parse_ip(packet, &ip)) {
-    count(IP_PACKET);
-
-    // TODO: fill in
-    return XDP_PASS;
-  }
-  return XDP_PASS;
-}
-
-static __always_inline int classify_ip6(struct packet_parser *packet) {
-  struct ipv6hdr *ip;
+  struct tcphdr *tcp;
+  struct udphdr *udp;
   
-  if (!parse_ip6(packet, &ip)) {
-    count(IPV6_PACKET);
-
-    // TODO: fill in
-    return XDP_PASS;
+  if (!parse_ip(packet, &ip)) {
+    switch (ip->protocol) {
+    case IPPROTO_UDP:
+      if (!parse_udp(packet, &udp)) {
+        return maybe_drop(ip->saddr, ip->daddr, udp->dest);
+      }
+      break;
+    case IPPROTO_TCP:
+      if (!parse_tcp(packet, &tcp)) {
+        return maybe_drop(ip->saddr, ip->daddr, tcp->dest);
+      }
+      break;
+    }
   }
   return XDP_PASS;
 }
@@ -103,11 +178,8 @@ int classifier(struct xdp_md *ctx) {
 
   struct ethhdr *eth;
   if (!parse_ethernet(&packet, &eth)) {
-    switch (eth->h_proto) {
-    case bpf_htons(ETH_P_IP):
+    if (eth->h_proto == bpf_htons(ETH_P_IP)) {
       return classify_ip(&packet);
-    case bpf_htons(ETH_P_IPV6):
-      return classify_ip6(&packet);
     }
   }
 
