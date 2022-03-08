@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"log"
-	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/andrewstucki/ebpfun/firewall"
 
@@ -21,32 +22,7 @@ func init() {
 	}
 }
 
-type Configuration struct {
-	Interfaces []string `hcl:"interfaces"`
-}
-
-func (c *Configuration) FilteredInterfaces() ([]net.Interface, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-
-	filtered := []net.Interface{}
-	for _, iface := range interfaces {
-		for _, configured := range c.Interfaces {
-			if iface.Name == configured {
-				filtered = append(filtered, iface)
-				break
-			}
-		}
-	}
-	return filtered, nil
-}
-
 func main() {
-	stop := make(chan os.Signal)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
 	var configFile string
 
 	flag.StringVar(&configFile, "config", "", "source of configuration")
@@ -56,28 +32,43 @@ func main() {
 	if configFile == "" {
 		log.Fatal("-config flag must be specified")
 	}
+
 	config := &Configuration{}
 	err := hclsimple.DecodeFile(configFile, nil, config)
 	if err != nil {
 		log.Fatalf("error reading configuration file: %v", err)
 	}
-
-	interfaces, err := config.FilteredInterfaces()
+	ingresses, exemptions, err := config.ToFirewall()
 	if err != nil {
-		log.Fatalf("unable to configure XDP interfaces: %v", err)
+		log.Fatalf("error parsing configuration: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	errors := make(chan error, 1)
+	// firewall.Update can be called any time to update the ingresses/exemptions live
+	if err := firewall.Update(ingresses, exemptions); err != nil {
+		log.Fatalf("error updating firewall configuration: %v", err)
+	}
+	defer firewall.Cleanup()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		errors <- firewall.Start(ctx, interfaces)
+		defer wg.Done()
+		for {
+			select {
+			case stats := <-firewall.Stats:
+				log.Println(stats)
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 
-	<-stop
-	cancel()
-
-	if err := <-errors; err != nil {
+	if err := firewall.Poll(ctx, 1*time.Second); err != nil {
 		log.Fatalf("error linking XDP program: %v", err)
 	}
+
+	wg.Wait()
 }
