@@ -2,7 +2,7 @@
 
 set -o errexit
 
-VERSION=11
+VERSION=14
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -21,7 +21,8 @@ apt-get -y upgrade
 
 apt-get install -y \
 	"postgresql-${VERSION}" \
-	"postgresql-contrib-${VERSION}"
+	"postgresql-contrib-${VERSION}" \
+	"postgresql-client-${VERSION}"
 
 PG_CONF="/etc/postgresql/${VERSION}/main/postgresql.conf"
 PG_HBA="/etc/postgresql/${VERSION}/main/pg_hba.conf"
