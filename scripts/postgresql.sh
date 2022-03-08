@@ -21,8 +21,7 @@ apt-get -y upgrade
 
 apt-get install -y \
 	"postgresql-${VERSION}" \
-	"postgresql-contrib-${VERSION}" \
-	"postgresql-client-${VERSION}"
+	"postgresql-contrib-${VERSION}"
 
 PG_CONF="/etc/postgresql/${VERSION}/main/postgresql.conf"
 PG_HBA="/etc/postgresql/${VERSION}/main/pg_hba.conf"
