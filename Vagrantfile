@@ -12,9 +12,9 @@ merge_how:
 EOF
 
 Vagrant.configure(VAGRANT_CONFIGURATION_VERSION) do |config|
-  consul_server_ip = "192.0.2.254"
-  dashboard_server_ip = "192.0.2.10"
-  counting_server_ip = "192.0.2.20"
+  consul_server_ip = "192.168.56.254"
+  dashboard_server_ip = "192.168.56.10"
+  counting_server_ip = "192.168.56.20"
 
   config.vm.box = "ubuntu/jammy64"
   #config.vm.box_version = "20210622.0.0"
