@@ -2,10 +2,14 @@
 
 ## Dependencies
 
-**These instructions are for a Mac**. You'll need a recent LLVM installation that can target bpfeb and bpfel. By default the `Makefile` attempts to use an LLVM installation installed by Homebrew. If you don't have an installation at `/usr/local/opt/llvm/bin` you can run:
+**These instructions are intended for a Mac**. Some additional notes for Ubuntu along the way.  You'll need a recent LLVM installation that can target bpfeb and bpfel. By default the `Makefile` attempts to use an LLVM installation installed by Homebrew. If you don't have an installation at `/usr/local/opt/llvm/bin` you can run:
 
 ```bash
 brew install llvm
+```
+
+```bash
+sudo apt install llvm-10 clang-10
 ```
 
 Aside from LLVM, you'll need at least go 1.17 and your PATH variable including the default location that `go install` writes to.
