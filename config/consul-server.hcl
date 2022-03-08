@@ -2,7 +2,7 @@ data_dir = "/tmp/consul/server"
 
 server           = true
 bootstrap_expect = 1
-advertise_addr   = "{{ GetInterfaceIP `eth1` }}"
+advertise_addr   = "{{ GetInterfaceIP `enp0s8` }}"
 client_addr      = "0.0.0.0"
 bind_addr        = "0.0.0.0"
 
