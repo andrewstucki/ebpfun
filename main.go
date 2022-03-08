@@ -52,15 +52,13 @@ func main() {
 	}
 	defer firewall.Cleanup()
 
-	stats := make(chan firewall.Stats, 1)
-
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for {
 			select {
-			case stats := <-stats:
+			case stats := <-firewall.Stats:
 				log.Println(stats)
 			case <-ctx.Done():
 				return
@@ -68,7 +66,7 @@ func main() {
 		}
 	}()
 
-	if err := firewall.Poll(ctx, 1*time.Second, stats); err != nil {
+	if err := firewall.Poll(ctx, 1*time.Second); err != nil {
 		log.Fatalf("error linking XDP program: %v", err)
 	}
 

@@ -22,6 +22,10 @@ var (
 	attachedLinks      []link.Link
 	attachedIngresses  []Ingress
 	attachedExemptions []Exemption
+
+	// this is a global channel where we send stat
+	// updates
+	Stats = make(chan PacketStats, 1)
 )
 
 func init() {
@@ -30,9 +34,9 @@ func init() {
 	}
 }
 
-func Poll(ctx context.Context, timeout time.Duration, stats chan Stats) error {
+func Poll(ctx context.Context, timeout time.Duration) error {
 	ticker := time.NewTicker(timeout)
-	current := Stats{}
+	current := PacketStats{}
 
 	for {
 		select {
@@ -43,7 +47,7 @@ func Poll(ctx context.Context, timeout time.Duration, stats chan Stats) error {
 			}
 			if updated != current {
 				select {
-				case stats <- updated:
+				case Stats <- updated:
 					current = updated
 				default:
 					// drop and pick up the stats update next time
