@@ -30,8 +30,8 @@ Vagrant.configure(VAGRANT_CONFIGURATION_VERSION) do |config|
           - path: /etc/consul.d/vagrant-config.hcl
             permissions: '0640'
             content: |
-              bind_addr = "{{ GetAllInterfaces | include \\"rfc\\" \\"5735\\" | attr \\"address\\" }}"
-              advertise_addr = "{{ GetAllInterfaces | include \\"rfc\\" \\"5735\\" | attr \\"address\\" }}"
+              bind_addr = "{{ GetInterfaceIP `enp0s8` }}"
+              advertise_addr = "{{ GetInterfaceIP `enp0s8` }}"
 
               retry_join = ["#{consul_server_ip}"]
 
