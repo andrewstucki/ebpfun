@@ -4,14 +4,17 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+	"golang.org/x/sys/unix"
 )
 
-//go:generate bpf2go -strip $BPF_STRIP -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf xdp.c -- -I./headers
+//go:generate bpf2go -strip $BPF_STRIP -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf xdp.c -- -I../headers
 
 var (
 	// since we're working with a global eBPF module
@@ -37,6 +40,51 @@ func init() {
 func Poll(ctx context.Context, timeout time.Duration) error {
 	ticker := time.NewTicker(timeout)
 	current := PacketStats{}
+
+	listener, err := net.Listen("tcp", "localhost:9090")
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			} else {
+				buffer := make([]byte, 1024)
+				_, err := conn.Read(buffer)
+				if err != nil {
+					log.Printf("Error reading: %v", err)
+				} else {
+					dialer := &net.Dialer{
+						Control: func(network, address string, conn syscall.RawConn) error {
+							mark := 0xdeadbeef
+							var operr error
+							if err := conn.Control(func(fd uintptr) {
+								operr = syscall.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, mark)
+							}); err != nil {
+								return err
+							}
+							return operr
+						},
+					}
+
+					upstream, err := dialer.Dial("tcp", conn.LocalAddr().String())
+					if err != nil {
+						log.Printf("Error dialing: %v", err)
+					} else {
+						upstream.Write(buffer)
+						upstream.Close()
+					}
+					log.Printf("Received message bound for (%s): %s", conn.LocalAddr().String(), string(buffer))
+					conn.Write(buffer)
+				}
+				conn.Close()
+			}
+		}
+	}()
 
 	for {
 		select {
@@ -160,7 +208,7 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 	// attach the bpf program to the desired interfaces
 	for _, iface := range interfaces {
 		xdp, err := link.AttachXDP(link.XDPOptions{
-			Program:   objects.Classifier,
+			Program:   objects.IngressClassifier,
 			Interface: iface.Index,
 		})
 		if err != nil {
@@ -168,6 +216,30 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 		}
 		attachedLinks = append(attachedLinks, xdp)
 	}
+
+	// attach our sklookup program to our current network
+	// namespace
+	netns, err := os.Open("/proc/self/ns/net")
+	if err != nil {
+		return err
+	}
+	defer netns.Close()
+	program, err := link.AttachNetNs(int(netns.Fd()), objects.Dispatcher)
+	if err != nil {
+		return err
+	}
+	attachedLinks = append(attachedLinks, program)
+
+	// attach our sockmap program
+	sockmap, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    "/sys/fs/cgroup",
+		Attach:  ebpf.AttachCGroupSockOps,
+		Program: objects.bpfPrograms.Sockmap,
+	})
+	if err != nil {
+		return err
+	}
+	attachedLinks = append(attachedLinks, sockmap)
 
 	return nil
 }

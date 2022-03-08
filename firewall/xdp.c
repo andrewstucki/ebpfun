@@ -5,10 +5,17 @@
 #include "bpf_endian.h"
 
 #define ETH_P_IP 0x0800
+#define AF_INET 2
 
 #define DROPPED_PACKET 0
 
 #define MAX_MAP_SIZE 1024
+
+// this is just static for now
+#define PROXY_PORT 9090
+// this maps to the loopback interface
+#define PROXY_ADDRESS 16777343
+#define PROXY_KEY 0
 
 #define ensure_size(packet, value)                                             \
   ({                                                                           \
@@ -26,32 +33,51 @@ struct __attribute__((__packed__)) ingress {
   __be16 port;
 };
 
+struct __attribute__((__packed__)) socket_tuple {
+  __u32 address;
+  __u32 port;
+};
+
 struct __attribute__((__packed__)) exemption {
   __be32 source;
   __be32 destination;
   __be16 port;
 };
 
-struct bpf_map_def SEC("maps") packet_counter = {
-  .type = BPF_MAP_TYPE_ARRAY,
-  .key_size = sizeof(u32),
-  .value_size = sizeof(u64),
-  .max_entries = 1,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, 1);
+} packet_counter SEC(".maps");
 
-struct bpf_map_def SEC("maps") exemptions = {
-  .type = BPF_MAP_TYPE_HASH,
-  .key_size = sizeof(struct exemption),
-  .value_size = sizeof(u8),
-  .max_entries = MAX_MAP_SIZE,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_SOCKHASH);
+	__type(key, u32);
+	__type(value, int); // socket fd
+	__uint(max_entries, 1); // only hold the upstream proxy
+} proxy_socket SEC(".maps");
 
-struct bpf_map_def SEC("maps") ingresses = {
-  .type = BPF_MAP_TYPE_HASH,
-  .key_size = sizeof(struct ingress),
-  .value_size = sizeof(u8),
-  .max_entries = MAX_MAP_SIZE,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, struct socket_tuple);
+	__type(value, u8);
+	__uint(max_entries, MAX_MAP_SIZE);
+} marked_sockets SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, struct exemption);
+	__type(value, u8);
+	__uint(max_entries, MAX_MAP_SIZE);
+} exemptions SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, struct ingress);
+	__type(value, u8);
+	__uint(max_entries, MAX_MAP_SIZE);
+} ingresses SEC(".maps");
 
 static __always_inline void count(u32 version) {
   u64 default_value = 1;
@@ -170,10 +196,10 @@ static __always_inline int classify_ip(struct packet_parser *packet) {
 }
 
 SEC("xdp_classifier")
-int classifier(struct xdp_md *ctx) {
+int ingress_classifier(struct xdp_md *ctx) {
   struct packet_parser packet = {
-      .current = (void *)(long)ctx->data,
-      .end = (void *)(long)ctx->data_end,
+    .current = (void *)(long)ctx->data,
+    .end = (void *)(long)ctx->data_end,
   };
 
   struct ethhdr *eth;
@@ -184,6 +210,65 @@ int classifier(struct xdp_md *ctx) {
   }
 
   return XDP_PASS;
+}
+
+static __always_inline bool socket_marked(__u32 address, __u32 port) {
+  struct socket_tuple key = {
+    .address = address,
+    .port = port,
+  };
+  u8 *marked = bpf_map_lookup_elem(&marked_sockets, &key);
+  if (marked) {
+    return true;
+  }
+  return false;
+}
+
+SEC("sk_lookup/dispatcher")
+int dispatcher(struct bpf_sk_lookup *ctx) {
+  if (ctx->family == AF_INET) {      
+    if (ingress_is_tracked(ctx->local_ip4, bpf_ntohs(ctx->local_port))) {      
+      if (!socket_marked(ctx->remote_ip4, bpf_ntohs(ctx->remote_port))) {
+        __u32 key = PROXY_KEY;
+        struct bpf_sock *proxy = bpf_map_lookup_elem(&proxy_socket, &key);
+        if (proxy) {
+          bpf_sk_assign(ctx, proxy, 0);
+          bpf_sk_release(proxy);
+        }
+      }
+    }
+  }
+
+  return SK_PASS;
+}
+
+SEC("sockops/sockmap")
+int sockmap(struct bpf_sock_ops *ops) {
+  struct bpf_sock *sk = ops->sk;
+  if (sk) {
+    if (sk->mark == 0xdeadbeef) {
+      struct socket_tuple key = {
+        .address = ops->local_ip4,
+        .port = ops->local_port,
+      };
+      u8 value = 0;
+      bpf_map_update_elem(&marked_sockets, &key, &value, BPF_ANY);
+    }
+  }
+
+  if (ops->family != AF_INET) {
+    return 0;
+  }
+
+  if (ops->local_ip4 == PROXY_ADDRESS && ops->local_port == PROXY_PORT) {    
+    __u32 key = PROXY_KEY;
+    switch (ops->op) {
+    case BPF_SOCK_OPS_TCP_LISTEN_CB:
+      bpf_sock_hash_update(ops, &proxy_socket, &key, BPF_NOEXIST);
+    }
+  }
+
+	return 0;
 }
 
 char __license[] SEC("license") = "BSD-3-Clause";

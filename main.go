@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/hashicorp/hcl/v2/hclsimple"
+	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -46,29 +46,30 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	group, ctx := errgroup.WithContext(ctx)
+
 	// firewall.Update can be called any time to update the ingresses/exemptions live
 	if err := firewall.Update(ingresses, exemptions); err != nil {
 		log.Fatalf("error updating firewall configuration: %v", err)
 	}
 	defer firewall.Cleanup()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	group.Go(func() error {
 		for {
 			select {
 			case stats := <-firewall.Stats:
 				log.Println(stats)
 			case <-ctx.Done():
-				return
+				return nil
 			}
 		}
-	}()
+	})
 
-	if err := firewall.Poll(ctx, 1*time.Second); err != nil {
-		log.Fatalf("error linking XDP program: %v", err)
+	group.Go(func() error {
+		return firewall.Poll(ctx, 1*time.Second)
+	})
+
+	if err := group.Wait(); err != nil {
+		log.Fatalf("error: %v", err)
 	}
-
-	wg.Wait()
 }
