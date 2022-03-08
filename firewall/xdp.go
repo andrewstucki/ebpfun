@@ -30,20 +30,24 @@ func init() {
 	}
 }
 
-func Poll(ctx context.Context, timeout time.Duration) error {
+func Poll(ctx context.Context, timeout time.Duration, stats chan Stats) error {
 	ticker := time.NewTicker(timeout)
-	current := packetStats{}
+	current := Stats{}
 
 	for {
 		select {
 		case <-ticker.C:
-			stats, err := readPacketCounter(&objects)
+			updated, err := readPacketCounter(&objects)
 			if err != nil {
 				return err
 			}
-			if stats != current {
-				log.Println(stats.String())
-				current = stats
+			if updated != current {
+				select {
+				case stats <- updated:
+					current = updated
+				default:
+					// drop and pick up the stats update next time
+				}
 			}
 		case <-ctx.Done():
 			return nil

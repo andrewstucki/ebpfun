@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,9 +23,6 @@ func init() {
 }
 
 func main() {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
 	var configFile string
 
 	flag.StringVar(&configFile, "config", "", "source of configuration")
@@ -34,6 +32,7 @@ func main() {
 	if configFile == "" {
 		log.Fatal("-config flag must be specified")
 	}
+
 	config := &Configuration{}
 	err := hclsimple.DecodeFile(configFile, nil, config)
 	if err != nil {
@@ -44,23 +43,34 @@ func main() {
 		log.Fatalf("error parsing configuration: %v", err)
 	}
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	// firewall.Update can be called any time to update the ingresses/exemptions live
 	if err := firewall.Update(ingresses, exemptions); err != nil {
 		log.Fatalf("error updating firewall configuration: %v", err)
 	}
 	defer firewall.Cleanup()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	stats := make(chan firewall.Stats, 1)
 
-	errors := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		errors <- firewall.Poll(ctx, 1*time.Second)
+		defer wg.Done()
+		for {
+			select {
+			case stats := <-stats:
+				log.Println(stats)
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 
-	<-stop
-	cancel()
-
-	if err := <-errors; err != nil {
+	if err := firewall.Poll(ctx, 1*time.Second, stats); err != nil {
 		log.Fatalf("error linking XDP program: %v", err)
 	}
+
+	wg.Wait()
 }
