@@ -1,12 +1,12 @@
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-	UNAME_P := $(shell uname -p)
-	ifeq ($(UNAME_P),x86_64)
+  UNAME_P := $(shell uname -p)
+  ifeq ($(UNAME_P),x86_64)
     LLVM_PATH ?= /usr/local/opt/llvm/bin
-	endif
-	ifeq ($(UNAME_P),arm)
+  endif
+  ifeq ($(UNAME_P),arm)
     LLVM_PATH ?= /opt/homebrew/opt/llvm/bin
-	endif
+  endif
 endif
 ifeq ($(UNAME_S),Linux)
   LLVM_PATH ?= /usr/lib/llvm-10/bin
