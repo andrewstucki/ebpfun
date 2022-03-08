@@ -4,9 +4,13 @@
 
 **These instructions are intended for a Mac**. Some additional notes for Ubuntu along the way.  You'll need a recent LLVM installation that can target bpfeb and bpfel. By default the `Makefile` attempts to use an LLVM installation installed by Homebrew. If you don't have an installation at `/usr/local/opt/llvm/bin` you can run:
 
+On Mac:
+
 ```bash
 brew install llvm
 ```
+
+On Ubuntu:
 
 ```bash
 sudo apt install llvm-10 clang-10
