@@ -1,0 +1,6 @@
+[submodule "envoy"]
+  path = envoy/envoy
+  url = https://github.com/envoyproxy/envoy.git
+[submodule "envoy/envoy"]
+	path = envoy/envoy
+	url = https://github.com/envoyproxy/envoy.git

@@ -1,0 +1,34 @@
+import %workspace%/envoy/.bazelrc
+
+# disabled extensions
+build --@envoy//source/extensions/wasm_runtime/null:enabled=false
+build --@envoy//source/extensions/wasm_runtime/v8:enabled=false
+build --@envoy//source/extensions/wasm_runtime/wamr:enabled=false
+build --@envoy//source/extensions/wasm_runtime/wavm:enabled=false
+build --@envoy//source/extensions/wasm_runtime/wasmtime:enabled=false
+build --@envoy//source/extensions/access_loggers/open_telemetry:enabled=false
+build --@envoy//source/extensions/filters/http/wasm:enabled=false
+build --@envoy//source/extensions/filters/http/aws_lambda:enabled=false
+build --@envoy//source/extensions/filters/http/aws_request_signing:enabled=false
+build --@envoy//source/extensions/compression/brotli/compressor:enabled=false
+build --@envoy//source/extensions/compression/brotli/decompressor:enabled=false
+build --@envoy//source/extensions/filters/network/wasm:enabled=false
+build --@envoy//source/extensions/filters/network/mongo_proxy:enabled=false
+build --@envoy//source/extensions/filters/network/redis_proxy:enabled=false
+build --@envoy//source/extensions/filters/network/dubbo_proxy:enabled=false
+build --@envoy//source/extensions/filters/network/zookeeper_proxy:enabled=false
+build --@envoy//source/extensions/clusters/redis:enabled=false
+build --@envoy//source/extensions/tracers/opencensus:enabled=false
+build --@envoy//source/extensions/tracers/zipkin:enabled=false
+build --@envoy//source/extensions/tracers/xray:enabled=false
+build --@envoy//source/extensions/tracers/datadog:enabled=false
+build --@envoy//source/extensions/tracers/lightstep:enabled=false
+build --@envoy//source/extensions/tracers/skywalking:enabled=false
+build --@envoy//source/extensions/filters/network/ext_authz:enabled=false
+build --@envoy//source/extensions/filters/network/local_ratelimit:enabled=false
+build --@envoy//source/extensions/filters/network/ratelimit:enabled=false
+build --@envoy//source/extensions/filters/network/thrift_proxy:enabled=false
+build --@envoy//source/extensions/grpc_credentials/aws_iam:enabled=false
+build --@envoy//source/extensions/grpc_credentials/aws_iam:enabled=false
+build --@envoy//source/extensions/quic/crypto_stream:enabled=false
+build --@envoy//source/extensions/quic/proof_source:enabled=false
