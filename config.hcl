@@ -80,6 +80,6 @@ ingress {
 
 exemption {
   source = "127.0.0.1"
-  destination = "127.0.0.1"
+  destination = "10.0.2.15"
   port = 8005
 }

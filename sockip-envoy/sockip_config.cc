@@ -33,7 +33,7 @@ public:
 };
 
 /**
- * Static registration for the echo2 filter. @see RegisterFactory.
+ * Static registration for the sockip filter. @see RegisterFactory.
  */
 REGISTER_FACTORY(SockIPConfigFactory, NamedListenerFilterConfigFactory){"sockip"};
 

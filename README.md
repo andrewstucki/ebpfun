@@ -20,12 +20,21 @@ go install github.com/cilium/ebpf/cmd/bpf2go@latest
 
 Once all dependencies are installed, run `make`. You can test the output binary on any of the Vagrant machines by running `sudo ./ebpfun -config config.hcl` in the `/vagrant` directory.
 
+## Envoy Installation
+
+To run `ebpfun` with L7 rules you'll need to install a custom `envoy` built with our `sockip` filter. You can install a pre-built version in the Vagrant box with: 
+
+```bash
+sudo curl -o /usr/bin/envoy https://ebpfun.s3.amazonaws.com/envoy
+```
+
 ## Output
 
-While running `yes | nc -u 127.0.0.1 81` with the configuration file at the top level of this repo you should see something like the following output:
+While running `yes | nc -u localhost 8005` with the configuration file at the top level of this repo you should see something like the following output:
 
 ```bash
 vagrant@ubuntu-jammy:/vagrant$ sudo ./ebpfun -config config.hcl
+...
 2022/03/08 03:32:04 Packets dropped: 46323
 2022/03/08 03:32:05 Packets dropped: 142811
 2022/03/08 03:32:06 Packets dropped: 227929

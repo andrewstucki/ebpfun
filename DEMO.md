@@ -61,6 +61,6 @@ socat -t 0.1 - tcp:10.0.2.15:8004
 
 Test out service 6.
 ```bash
-echo | socat -t 0.1 - udp:127.0.0.1:8005
-yes | socat -t 0.1 - udp:10.0.2.15:8005
+echo | socat -t 0.1 - udp:10.0.2.15:8005
+yes | socat -t 0.1 - udp:127.0.0.1:8005
 ```
