@@ -40,8 +40,35 @@ vagrant@ubuntu-jammy:/vagrant$ sudo ./ebpfun -config config.hcl
 2022/03/07 19:11:37 Packets received: IP - 100540, IPv6 - 182532
 ```
 
-## Vagrant
+## Vagrant quick start
+
+Start the Consul server with the following `vagrant up` command.
 
 ```bash
 VAGRANT_EXPERIMENTAL="cloud_init,disks" vagrant up
 ```
+
+After the instance has booted, you may safely start the remaining nodes in the
+Vagrantfile using the aforementioned `vagrant up` command. The remaining node
+names are:
+
+* web
+* api[1-3]
+
+For example, in order to start the web and api1 service, run the following command.
+
+```shell-session
+VAGRANT_EXPERIMENTAL="cloud_init,disks" vagrant up web api1
+```
+
+Each of the nodes are configured to run
+[nicholasjackson/fake-service](https://github.com/nicholasjackson/fake-service>).
+
+Vagrant is configured to expose fake-service from the `web` node on
+`localhost:9090`. The web service is configured to use the API services as an
+upstream service. That is to say, any HTTP requests sent to the web service will
+in turn trigger an upstream request to the API service. `web` will then assemble
+and return the response bodies for *both* the API service, and web's own HTTP
+server.
+
+For more information on this Vagrant stack, see <https://github.com/blake/vagrant-consul-tproxy/tree/ubuntu22-update/examples/vagrant/prebuilt-image>.
