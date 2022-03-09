@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate bpf2go -strip $BPF_STRIP -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf xdp.c -- -I./headers
+//go:generate bpf2go -strip $BPF_STRIP -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf xdp.c -- -I../headers
 
 var (
 	// since we're working with a global eBPF module
@@ -160,7 +161,7 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 	// attach the bpf program to the desired interfaces
 	for _, iface := range interfaces {
 		xdp, err := link.AttachXDP(link.XDPOptions{
-			Program:   objects.Classifier,
+			Program:   objects.IngressClassifier,
 			Interface: iface.Index,
 		})
 		if err != nil {
@@ -168,6 +169,30 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 		}
 		attachedLinks = append(attachedLinks, xdp)
 	}
+
+	// attach our sklookup program to our current network
+	// namespace
+	netns, err := os.Open("/proc/self/ns/net")
+	if err != nil {
+		return err
+	}
+	defer netns.Close()
+	program, err := link.AttachNetNs(int(netns.Fd()), objects.Dispatcher)
+	if err != nil {
+		return err
+	}
+	attachedLinks = append(attachedLinks, program)
+
+	// attach our sockmap program
+	sockmap, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    "/sys/fs/cgroup",
+		Attach:  ebpf.AttachCGroupSockOps,
+		Program: objects.bpfPrograms.Sockmap,
+	})
+	if err != nil {
+		return err
+	}
+	attachedLinks = append(attachedLinks, sockmap)
 
 	return nil
 }
