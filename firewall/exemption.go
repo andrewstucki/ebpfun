@@ -6,10 +6,15 @@ import (
 	"net"
 )
 
+type L7Rule struct {
+	HeaderPresent string
+}
+
 type Exemption struct {
 	Destination net.IP
 	Port        int
 	Source      net.IP
+	L7Rules     []L7Rule
 }
 
 func (s *Exemption) String() string {

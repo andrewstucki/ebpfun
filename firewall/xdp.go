@@ -132,8 +132,12 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 	ingressKeys := [][6]byte{}
 	ingressValues := []uint8{}
 	for _, ingress := range ingresses {
+		value := uint8(0)
+		if ingress.HTTP {
+			value = uint8(1)
+		}
 		ingressKeys = append(ingressKeys, ingress.key())
-		ingressValues = append(ingressValues, uint8(0))
+		ingressValues = append(ingressValues, value)
 	}
 	if len(ingressKeys) > 0 {
 		_, err := objects.Ingresses.BatchUpdate(ingressKeys, ingressValues, &ebpf.BatchOptions{})

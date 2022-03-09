@@ -5,11 +5,13 @@ import (
 	"net"
 
 	"github.com/andrewstucki/ebpfun/firewall"
+	"github.com/andrewstucki/ebpfun/firewall/envoy"
 )
 
 type Ingress struct {
 	Address string `hcl:"address"`
 	Port    int    `hcl:"port"`
+	HTTP    bool   `hcl:"http,optional"`
 }
 
 func parseIP(address string) (net.IP, error) {
@@ -29,13 +31,19 @@ func (i Ingress) ToFirewall() (firewall.Ingress, error) {
 	return firewall.Ingress{
 		Address: ip,
 		Port:    i.Port,
+		HTTP:    i.HTTP,
 	}, nil
 }
 
+type L7Rule struct {
+	HeaderPresent string `hcl:"header_present"`
+}
+
 type Exemption struct {
-	Source      string `hcl:"source"`
-	Destination string `hcl:"destination"`
-	Port        int    `hcl:"port"`
+	Source      string   `hcl:"source"`
+	Destination string   `hcl:"destination"`
+	Port        int      `hcl:"port"`
+	L7Rules     []L7Rule `hcl:"l7_rule,block"`
 }
 
 func (e Exemption) ToFirewall() (firewall.Exemption, error) {
@@ -48,11 +56,35 @@ func (e Exemption) ToFirewall() (firewall.Exemption, error) {
 		return firewall.Exemption{}, err
 	}
 
+	rules := []firewall.L7Rule{}
+	for _, rule := range e.L7Rules {
+		rules = append(rules, firewall.L7Rule{
+			HeaderPresent: rule.HeaderPresent,
+		})
+	}
+
 	return firewall.Exemption{
 		Source:      sourceIP,
 		Destination: destinationIP,
 		Port:        e.Port,
+		L7Rules:     rules,
 	}, nil
+}
+
+func (e Exemption) ToEnvoy() ([]envoy.EnvoyRule, error) {
+	if e.L7Rules == nil {
+		return nil, nil
+	}
+
+	rules := []envoy.EnvoyRule{}
+	for _, rule := range e.L7Rules {
+		rules = append(rules, envoy.EnvoyRule{
+			Address: e.Destination,
+			Port:    e.Port,
+			Header:  rule.HeaderPresent,
+		})
+	}
+	return rules, nil
 }
 
 type Configuration struct {
@@ -80,4 +112,16 @@ func (c Configuration) ToFirewall() ([]firewall.Ingress, []firewall.Exemption, e
 	}
 
 	return ingresses, exemptions, nil
+}
+
+func (c Configuration) ToEnvoy() ([]envoy.EnvoyRule, error) {
+	rules := []envoy.EnvoyRule{}
+	for _, exemption := range c.Exemptions {
+		ruleSet, err := exemption.ToEnvoy()
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, ruleSet...)
+	}
+	return rules, nil
 }

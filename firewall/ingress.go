@@ -9,6 +9,7 @@ import (
 type Ingress struct {
 	Address net.IP
 	Port    int
+	HTTP    bool
 }
 
 func (i *Ingress) String() string {

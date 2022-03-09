@@ -17,6 +17,8 @@
 #define PROXY_ADDRESS 16777343
 #define PROXY_KEY 0
 
+#define L7_ENABLED 1
+
 #define ensure_size(packet, value)                                             \
   ({                                                                           \
     if ((void *)((void *)packet->current + value) > (void *)packet->end)       \
@@ -99,6 +101,18 @@ static __always_inline bool ingress_is_tracked(__be32 address, __be16 port) {
   };
   if (bpf_map_lookup_elem(&ingresses, &key)) {
     return true;
+  }
+  return false;
+}
+
+static __always_inline bool ingress_is_tracked_l7(__be32 address, __be16 port) {
+  struct ingress key = {
+      .address = address,
+      .port = port,
+  };
+  __u8 *mode = bpf_map_lookup_elem(&ingresses, &key);
+  if (mode) {
+    return *mode == L7_ENABLED;
   }
   return false;
 }
@@ -248,7 +262,7 @@ static __always_inline void store_marked_socket(__u32 source, __u32 source_port,
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx) {
   if (ctx->family == AF_INET) {
-    if (ingress_is_tracked(ctx->local_ip4, bpf_ntohs(ctx->local_port))) {
+    if (ingress_is_tracked_l7(ctx->local_ip4, bpf_ntohs(ctx->local_port))) {
       if (!socket_marked(ctx->remote_ip4, bpf_ntohs(ctx->remote_port), ctx->local_ip4, ctx->local_port)) {
         __u32 key = PROXY_KEY;
         struct bpf_sock *proxy = bpf_map_lookup_elem(&proxy_socket, &key);

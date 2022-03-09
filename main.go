@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/andrewstucki/ebpfun/firewall"
+	"github.com/andrewstucki/ebpfun/firewall/envoy"
 
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -42,6 +43,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("error parsing configuration: %v", err)
 	}
+	envoyRules, err := config.ToEnvoy()
+	if err != nil {
+		log.Fatalf("error parsing configuration: %v", err)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -53,6 +58,12 @@ func main() {
 		log.Fatalf("error updating firewall configuration: %v", err)
 	}
 	defer firewall.Cleanup()
+
+	manager, err := envoy.NewManager()
+	if err != nil {
+		log.Fatalf("error initializing envoy manager: %v", err)
+	}
+	defer manager.Cleanup()
 
 	group.Go(func() error {
 		for {
@@ -67,6 +78,10 @@ func main() {
 
 	group.Go(func() error {
 		return firewall.Poll(ctx, 1*time.Second)
+	})
+
+	group.Go(func() error {
+		return manager.Run(ctx, envoyRules)
 	})
 
 	if err := group.Wait(); err != nil {
