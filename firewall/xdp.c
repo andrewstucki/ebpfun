@@ -34,8 +34,10 @@ struct __attribute__((__packed__)) ingress {
 };
 
 struct __attribute__((__packed__)) socket_tuple {
-  __u32 address;
-  __u32 port;
+  __u32 source;
+  __u32 source_port;
+  __u32 destination;
+  __u32 destination_port;
 };
 
 struct __attribute__((__packed__)) exemption {
@@ -54,7 +56,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_SOCKHASH);
   __type(key, u32);
-  __type(value, int); // socket fd
+  __type(value, int);     // socket fd
   __uint(max_entries, 1); // only hold the upstream proxy
 } proxy_socket SEC(".maps");
 
@@ -92,8 +94,8 @@ static __always_inline void count(u32 version) {
 
 static __always_inline bool ingress_is_tracked(__be32 address, __be16 port) {
   struct ingress key = {
-    .address = address,
-    .port = port,
+      .address = address,
+      .port = port,
   };
   if (bpf_map_lookup_elem(&ingresses, &key)) {
     return true;
@@ -101,11 +103,12 @@ static __always_inline bool ingress_is_tracked(__be32 address, __be16 port) {
   return false;
 }
 
-static __always_inline bool has_exemption(__be32 source, __be32 destination, __be16 port) {
+static __always_inline bool has_exemption(__be32 source, __be32 destination,
+                                          __be16 port) {
   struct exemption key = {
-    .source = source,
-    .destination = destination,
-    .port = port,
+      .source = source,
+      .destination = destination,
+      .port = port,
   };
 
   if (bpf_map_lookup_elem(&exemptions, &key)) {
@@ -114,7 +117,8 @@ static __always_inline bool has_exemption(__be32 source, __be32 destination, __b
   return false;
 }
 
-static __always_inline int maybe_drop(__be32 source, __be32 destination, __be16 port) {  
+static __always_inline int maybe_drop(__be32 source, __be32 destination,
+                                      __be16 port) {
   // are we actively tracking this destination?
   if (ingress_is_tracked(destination, port)) {
     // if we are, check if we have an exemption
@@ -127,7 +131,8 @@ static __always_inline int maybe_drop(__be32 source, __be32 destination, __be16 
   return XDP_PASS;
 }
 
-static __always_inline int parse_ethernet(struct packet_parser *packet, struct ethhdr **eth) {
+static __always_inline int parse_ethernet(struct packet_parser *packet,
+                                          struct ethhdr **eth) {
   ensure_size(packet, sizeof(struct ethhdr));
 
   *eth = packet->current;
@@ -135,7 +140,8 @@ static __always_inline int parse_ethernet(struct packet_parser *packet, struct e
   return 0;
 }
 
-static __always_inline int parse_ip(struct packet_parser *packet, struct iphdr **ip) {
+static __always_inline int parse_ip(struct packet_parser *packet,
+                                    struct iphdr **ip) {
   ensure_size(packet, sizeof(struct iphdr));
 
   struct iphdr *header = (struct iphdr *)packet->current;
@@ -150,7 +156,8 @@ static __always_inline int parse_ip(struct packet_parser *packet, struct iphdr *
   return 0;
 }
 
-static __always_inline int parse_tcp(struct packet_parser *packet, struct tcphdr **tcp) {
+static __always_inline int parse_tcp(struct packet_parser *packet,
+                                     struct tcphdr **tcp) {
   ensure_size(packet, sizeof(struct tcphdr));
 
   struct tcphdr *header = (struct tcphdr *)packet->current;
@@ -165,7 +172,8 @@ static __always_inline int parse_tcp(struct packet_parser *packet, struct tcphdr
   return 0;
 }
 
-static __always_inline int parse_udp(struct packet_parser *packet, struct udphdr **udp) {
+static __always_inline int parse_udp(struct packet_parser *packet,
+                                     struct udphdr **udp) {
   ensure_size(packet, sizeof(struct udphdr));
 
   *udp = (struct udphdr *)packet->current;
@@ -177,7 +185,7 @@ static __always_inline int classify_ip(struct packet_parser *packet) {
   struct iphdr *ip;
   struct tcphdr *tcp;
   struct udphdr *udp;
-  
+
   if (!parse_ip(packet, &ip)) {
     switch (ip->protocol) {
     case IPPROTO_UDP:
@@ -198,8 +206,8 @@ static __always_inline int classify_ip(struct packet_parser *packet) {
 SEC("xdp_classifier")
 int ingress_classifier(struct xdp_md *ctx) {
   struct packet_parser packet = {
-    .current = (void *)(long)ctx->data,
-    .end = (void *)(long)ctx->data_end,
+      .current = (void *)(long)ctx->data,
+      .end = (void *)(long)ctx->data_end,
   };
 
   struct ethhdr *eth;
@@ -212,10 +220,12 @@ int ingress_classifier(struct xdp_md *ctx) {
   return XDP_PASS;
 }
 
-static __always_inline bool socket_marked(__u32 address, __u32 port) {
+static __always_inline bool socket_marked(__u32 source, __u32 source_port, __u32 destination, __u32 destination_port) {
   struct socket_tuple key = {
-    .address = address,
-    .port = port,
+      .source = source,
+      .source_port = source_port,
+      .destination = destination,
+      .destination_port = destination_port,
   };
   u8 *marked = bpf_map_lookup_elem(&marked_sockets, &key);
   if (marked) {
@@ -224,10 +234,12 @@ static __always_inline bool socket_marked(__u32 address, __u32 port) {
   return false;
 }
 
-static __always_inline void store_marked_socket(__u32 address, __u32 port) {
+static __always_inline void store_marked_socket(__u32 source, __u32 source_port, __u32 destination, __u32 destination_port) {
   struct socket_tuple key = {
-    .address = address,
-    .port = port,
+      .source = source,
+      .source_port = source_port,
+      .destination = destination,
+      .destination_port = destination_port,
   };
   u8 value = 0;
   bpf_map_update_elem(&marked_sockets, &key, &value, BPF_ANY);
@@ -235,9 +247,9 @@ static __always_inline void store_marked_socket(__u32 address, __u32 port) {
 
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx) {
-  if (ctx->family == AF_INET) {      
-    if (ingress_is_tracked(ctx->local_ip4, bpf_ntohs(ctx->local_port))) {      
-      if (!socket_marked(ctx->remote_ip4, bpf_ntohs(ctx->remote_port))) {
+  if (ctx->family == AF_INET) {
+    if (ingress_is_tracked(ctx->local_ip4, bpf_ntohs(ctx->local_port))) {
+      if (!socket_marked(ctx->remote_ip4, bpf_ntohs(ctx->remote_port), ctx->local_ip4, ctx->local_port)) {
         __u32 key = PROXY_KEY;
         struct bpf_sock *proxy = bpf_map_lookup_elem(&proxy_socket, &key);
         if (proxy) {
@@ -256,7 +268,7 @@ int sockmap(struct bpf_sock_ops *ops) {
   struct bpf_sock *sk = ops->sk;
   if (sk) {
     if (sk->mark == 0xdeadbeef) {
-      store_marked_socket(ops->local_ip4, ops->local_port);
+      store_marked_socket(ops->local_ip4, ops->local_port, ops->remote_ip4, bpf_ntohl(ops->remote_port));
     }
   }
 
@@ -264,7 +276,7 @@ int sockmap(struct bpf_sock_ops *ops) {
     return 0;
   }
 
-  if (ops->local_ip4 == PROXY_ADDRESS && ops->local_port == PROXY_PORT) {    
+  if (ops->local_ip4 == PROXY_ADDRESS && ops->local_port == PROXY_PORT) {
     __u32 key = PROXY_KEY;
     switch (ops->op) {
     case BPF_SOCK_OPS_TCP_LISTEN_CB:
