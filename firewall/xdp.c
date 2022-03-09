@@ -45,38 +45,38 @@ struct __attribute__((__packed__)) exemption {
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, 1);
+  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __type(key, u32);
+  __type(value, u64);
+  __uint(max_entries, 1);
 } packet_counter SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_SOCKHASH);
-	__type(key, u32);
-	__type(value, int); // socket fd
-	__uint(max_entries, 1); // only hold the upstream proxy
+  __uint(type, BPF_MAP_TYPE_SOCKHASH);
+  __type(key, u32);
+  __type(value, int); // socket fd
+  __uint(max_entries, 1); // only hold the upstream proxy
 } proxy_socket SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct socket_tuple);
-	__type(value, u8);
-	__uint(max_entries, MAX_MAP_SIZE);
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __type(key, struct socket_tuple);
+  __type(value, u8);
+  __uint(max_entries, MAX_MAP_SIZE);
 } marked_sockets SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct exemption);
-	__type(value, u8);
-	__uint(max_entries, MAX_MAP_SIZE);
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __type(key, struct exemption);
+  __type(value, u8);
+  __uint(max_entries, MAX_MAP_SIZE);
 } exemptions SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__type(key, struct ingress);
-	__type(value, u8);
-	__uint(max_entries, MAX_MAP_SIZE);
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __type(key, struct ingress);
+  __type(value, u8);
+  __uint(max_entries, MAX_MAP_SIZE);
 } ingresses SEC(".maps");
 
 static __always_inline void count(u32 version) {
@@ -224,6 +224,15 @@ static __always_inline bool socket_marked(__u32 address, __u32 port) {
   return false;
 }
 
+static __always_inline void store_marked_socket(__u32 address, __u32 port) {
+  struct socket_tuple key = {
+    .address = address,
+    .port = port,
+  };
+  u8 value = 0;
+  bpf_map_update_elem(&marked_sockets, &key, &value, BPF_ANY);
+}
+
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx) {
   if (ctx->family == AF_INET) {      
@@ -247,12 +256,7 @@ int sockmap(struct bpf_sock_ops *ops) {
   struct bpf_sock *sk = ops->sk;
   if (sk) {
     if (sk->mark == 0xdeadbeef) {
-      struct socket_tuple key = {
-        .address = ops->local_ip4,
-        .port = ops->local_port,
-      };
-      u8 value = 0;
-      bpf_map_update_elem(&marked_sockets, &key, &value, BPF_ANY);
+      store_marked_socket(ops->local_ip4, ops->local_port);
     }
   }
 
@@ -268,7 +272,7 @@ int sockmap(struct bpf_sock_ops *ops) {
     }
   }
 
-	return 0;
+  return 0;
 }
 
 char __license[] SEC("license") = "BSD-3-Clause";
