@@ -1,11 +1,19 @@
-# eBPFun
+# XDP Skeleton
 
 ## Dependencies
 
-**These instructions are for a Mac**. You'll need a recent LLVM installation that can target bpfeb and bpfel. By default the `Makefile` attempts to use an LLVM installation installed by Homebrew. If you don't have an installation at `/usr/local/opt/llvm/bin` you can run:
+**These instructions are intended for a Mac**. Some additional notes for Ubuntu along the way.  You'll need a recent LLVM installation that can target bpfeb and bpfel. By default the `Makefile` attempts to use an LLVM installation installed by Homebrew. If you don't have an installation at `/usr/local/opt/llvm/bin` you can run:
+
+On Mac:
 
 ```bash
 brew install llvm
+```
+
+On Ubuntu:
+
+```bash
+sudo apt install llvm-10 clang-10
 ```
 
 Aside from LLVM, you'll need at least go 1.17 and your PATH variable including the default location that `go install` writes to.
@@ -22,16 +30,18 @@ Once all dependencies are installed, run `make`. You can test the output binary 
 
 ## Output
 
-While running `yes | nc -u 127.0.0.1 81` with the configuration file at the top level of this repo you should see something like the following output:
+Since this program is just a dead-simple packet counter you can test the program output by running the default configuration and pinging your loopback interface. While running `sudo ping -f localhost` and `sudo ping -f ::1` you should see something like the following output:
 
 ```bash
 vagrant@ubuntu-jammy:/vagrant$ sudo ./ebpfun -config config.hcl
-2022/03/08 03:32:04 Packets dropped: 46323
-2022/03/08 03:32:05 Packets dropped: 142811
-2022/03/08 03:32:06 Packets dropped: 227929
-2022/03/08 03:32:07 Packets dropped: 321104
-2022/03/08 03:32:08 Packets dropped: 409536
-2022/03/08 03:32:09 Packets dropped: 505245
-2022/03/08 03:32:10 Packets dropped: 595287
-2022/03/08 03:32:11 Packets dropped: 636769
+2022/03/07 19:11:32 Packets received: IP - 26650, IPv6 - 0
+2022/03/07 19:11:33 Packets received: IP - 100540, IPv6 - 0
+2022/03/07 19:11:36 Packets received: IP - 100540, IPv6 - 101651
+2022/03/07 19:11:37 Packets received: IP - 100540, IPv6 - 182532
+```
+
+## Vagrant
+
+```bash
+VAGRANT_EXPERIMENTAL="cloud_init,disks" vagrant up
 ```
