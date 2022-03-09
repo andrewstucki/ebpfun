@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/andrewstucki/ebpfun/consul"
 	"github.com/andrewstucki/ebpfun/firewall"
@@ -58,10 +59,21 @@ func main() {
 		log.Fatalf("failed to watch: %s", err)
 	}
 
+	// Cleanup eBPF when shutting down
+	defer firewall.Cleanup()
+
+	go func(ctx context.Context) {
+		if err := firewall.Poll(ctx, 1*time.Second); err != nil {
+			log.Fatalf("error linking XDP program: %v", err)
+		}
+	}(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case stats := <-firewall.Stats:
+			log.Println(stats)
 		case es := <-ch:
 			log.Printf("Exemptions updated: %v\n", es.Exemptions)
 
@@ -84,30 +96,4 @@ func main() {
 			}
 		}
 	}
-
-	// // firewall.Update can be called any time to update the ingresses/exemptions live
-	// if err := firewall.Update(ingresses, exemptions); err != nil {
-	// 	log.Fatalf("error updating firewall configuration: %v", err)
-	// }
-	// defer firewall.Cleanup()
-
-	// var wg sync.WaitGroup
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	for {
-	// 		select {
-	// 		case stats := <-firewall.Stats:
-	// 			log.Println(stats)
-	// 		case <-ctx.Done():
-	// 			return
-	// 		}
-	// 	}
-	// }()
-
-	// if err := firewall.Poll(ctx, 1*time.Second); err != nil {
-	// 	log.Fatalf("error linking XDP program: %v", err)
-	// }
-
-	// wg.Wait()
 }

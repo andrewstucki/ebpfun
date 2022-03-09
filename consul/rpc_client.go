@@ -98,12 +98,12 @@ func (c *RPCClient) watchExemptions(ctx context.Context, service string, ch chan
 			}
 		}
 
-		q.Q(resp)
+		// q.Q(resp)
 
 		// Got a result! Process it into exemptions
 		e := exemptionsFromTopology(service, &resp)
 
-		if lastSet == nil || reflect.DeepEqual(e, *lastSet) {
+		if lastSet == nil || !reflect.DeepEqual(e, *lastSet) {
 			select {
 			case <-ctx.Done():
 				return
