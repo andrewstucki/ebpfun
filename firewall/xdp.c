@@ -67,6 +67,13 @@ struct {
   __type(key, struct socket_tuple);
   __type(value, u8);
   __uint(max_entries, MAX_MAP_SIZE);
+} proxied_sockets SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __type(key, struct socket_tuple);
+  __type(value, u8);
+  __uint(max_entries, MAX_MAP_SIZE);
 } marked_sockets SEC(".maps");
 
 struct {
@@ -259,6 +266,31 @@ static __always_inline void store_marked_socket(__u32 source, __u32 source_port,
   bpf_map_update_elem(&marked_sockets, &key, &value, BPF_ANY);
 }
 
+static __always_inline void store_proxied_socket(__u32 source, __u32 source_port, __u32 destination, __u32 destination_port) {
+  struct socket_tuple key = {
+      .source = source,
+      .source_port = source_port,
+      .destination = destination,
+      .destination_port = destination_port,
+  };
+  u8 value = 0;
+  bpf_map_update_elem(&proxied_sockets, &key, &value, BPF_ANY);
+}
+
+static __always_inline bool is_proxied(__u32 source, __u32 source_port, __u32 destination, __u32 destination_port) {
+  struct socket_tuple key = {
+      .source = source,
+      .source_port = source_port,
+      .destination = destination,
+      .destination_port = destination_port,
+  };
+  u8 *marked = bpf_map_lookup_elem(&proxied_sockets, &key);
+  if (marked) {
+    return true;
+  }
+  return false;
+}
+
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx) {
   if (ctx->family == AF_INET) {
@@ -267,6 +299,7 @@ int dispatcher(struct bpf_sk_lookup *ctx) {
         __u32 key = PROXY_KEY;
         struct bpf_sock *proxy = bpf_map_lookup_elem(&proxy_socket, &key);
         if (proxy) {
+          store_proxied_socket(ctx->remote_ip4, bpf_ntohs(ctx->remote_port), ctx->local_ip4, ctx->local_port);
           bpf_sk_assign(ctx, proxy, 0);
           bpf_sk_release(proxy);
         }
@@ -301,4 +334,29 @@ int sockmap(struct bpf_sock_ops *ops) {
   return 0;
 }
 
-char __license[] SEC("license") = "BSD-3-Clause";
+#define SO_ORIGINAL_DST 80
+
+SEC("cgroup/getsockopt")
+int get_sockopt(struct bpf_sockopt *ctx) {
+  if (ctx->optname == SO_ORIGINAL_DST) {
+    struct bpf_sock *sk = ctx->sk;
+    if (is_proxied(sk->dst_ip4, bpf_ntohs(sk->dst_port), sk->src_ip4, sk->src_port)) {
+      ctx->optlen = (__s32)sizeof(struct sockaddr_in);
+      ctx->retval = 0;
+      struct sockaddr_in *optval = ctx->optval;
+      if ((void *)(optval + 1) > (void *)ctx->optval_end) {
+        return 1;
+      }
+      struct sockaddr_in sa = {
+        .sin_family = sk->family,
+        .sin_addr.s_addr = sk->src_ip4,
+        .sin_port = bpf_ntohs(sk->src_port),
+      };
+      *optval = sa;
+    }
+  }
+  return 1;
+}
+
+// char __license[] SEC("license") = "BSD-3-Clause";
+char __license[] SEC("license") = "GPL";

@@ -189,8 +189,8 @@ const bootstrapJSONTemplate = `
 					 },
 					 "listener_filters": [
 							{
-								 "name": "sockip",
-								 "typed_config": {}
+									"name": "envoy.filters.listener.original_dst",
+									"typed_config": {}
 							}
 					 ],
 					 "filter_chains": [{{ . }}]

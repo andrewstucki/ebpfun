@@ -198,5 +198,16 @@ func attach(ingresses []Ingress, interfaces []net.Interface, exemptions []Exempt
 	}
 	attachedLinks = append(attachedLinks, sockmap)
 
+	// attach our getopt program
+	getopt, err := link.AttachCgroup((link.CgroupOptions{
+		Path:    "/sys/fs/cgroup",
+		Attach:  ebpf.AttachCGroupGetsockopt,
+		Program: objects.bpfPrograms.GetSockopt,
+	}))
+	if err != nil {
+		return err
+	}
+	attachedLinks = append(attachedLinks, getopt)
+
 	return nil
 }
