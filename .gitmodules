@@ -1,3 +1,0 @@
-[submodule "sockip-envoy/envoy"]
-	path = sockip-envoy/envoy
-	url = https://github.com/envoyproxy/envoy.git
