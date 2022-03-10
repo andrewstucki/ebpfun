@@ -32,7 +32,7 @@ exemption {
   }
 }
 
-// treat as a TCP server
+// No L7 offload
 ingress {
   address = "127.0.0.1"
   port = 8002
@@ -42,44 +42,4 @@ exemption {
   source = "127.0.0.1"
   destination = "127.0.0.1"
   port = 8002
-}
-
-// No exemptions
-ingress {
-  address = "127.0.0.1"
-  port = 8003
-}
-
-// TCP server
-ingress {
-  address = "10.0.2.15"
-  port = 8004
-}
-
-ingress {
-  address = "127.0.0.1"
-  port = 8004
-}
-
-exemption {
-  source = "127.0.0.1"
-  destination = "127.0.0.1"
-  port = 8004
-}
-
-// UDP echo
-ingress {
-  address = "10.0.2.15"
-  port = 8005
-}
-
-ingress {
-  address = "127.0.0.1"
-  port = 8005
-}
-
-exemption {
-  source = "127.0.0.1"
-  destination = "10.0.2.15"
-  port = 8005
 }

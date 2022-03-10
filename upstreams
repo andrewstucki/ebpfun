@@ -10,18 +10,3 @@ rm -rf server1 server2 server3 server4
 mkdir -p server1 && touch server1/server1
 mkdir -p server2 && touch server2/server2
 mkdir -p server3 && touch server3/server3
-mkdir -p server4 && touch server4/server4
-
-python3 -m http.server --directory server1 8000 &
-python3 -m http.server --directory server2 8001 &
-python3 -m http.server --directory server3 8002 &
-python3 -m http.server --directory server4 8003 &
-
-# tcp server
-echo "Serving TCP on 0.0.0.0 port 8004 ..."
-ncat -e "/bin/echo server5" -k -l 8004 &
-# udp server
-echo "Serving UDP on 0.0.0.0 port 8005 ..."
-ncat -e "/bin/echo server6" -k -u -l 8005 &
-
-wait
