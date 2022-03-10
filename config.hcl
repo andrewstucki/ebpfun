@@ -43,3 +43,9 @@ exemption {
   destination = "127.0.0.1"
   port = 8002
 }
+
+// UDP
+ingress {
+  address = "127.0.0.1"
+  port = 8003
+}

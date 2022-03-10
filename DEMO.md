@@ -11,6 +11,7 @@ Show ability to route to each service.
 curl --silent localhost:8000 | grep server
 curl --silent localhost:8001 | grep server
 curl --silent localhost:8002 | grep server
+echo | socat -t 0.1 - udp:127.0.0.1:8003
 ```
 
 Boot up `ebpfun`.
@@ -43,4 +44,9 @@ Test out service 3.
 ```bash
 curl --silent localhost:8002 | grep server
 curl localhost:8002 --head
+```
+
+For fun, show service 4
+```bash
+parallel -N0 "yes '' | socat -t 0.1 - udp:127.0.0.1:8003" ::: {1..4}
 ```
