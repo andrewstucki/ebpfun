@@ -358,5 +358,4 @@ int get_sockopt(struct bpf_sockopt *ctx) {
   return 1;
 }
 
-// char __license[] SEC("license") = "BSD-3-Clause";
-char __license[] SEC("license") = "GPL";
+char __license[] SEC("license") = "BSD-3-Clause";
