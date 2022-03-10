@@ -10,3 +10,9 @@ rm -rf server1 server2 server3 server4
 mkdir -p server1 && touch server1/server1
 mkdir -p server2 && touch server2/server2
 mkdir -p server3 && touch server3/server3
+
+python3 -m http.server --directory server1 8000 &
+python3 -m http.server --directory server2 8001 &
+python3 -m http.server --directory server3 8002 &
+
+wait
